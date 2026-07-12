@@ -15,6 +15,13 @@
       "when": 1738875490221,
       "tag": "0001_curly_quicksilver",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783854942561,
+      "tag": "0002_closed_omega_red",
+      "breakpoints": true
     }
   ]
 }

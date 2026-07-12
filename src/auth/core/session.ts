@@ -10,9 +10,11 @@ const COOKIE_SESSION_KEY = "session-id"
 const sessionSchema = z.object({
   id: z.string(),
   role: z.enum(userRoles),
+  expiresAt: z.number().int().positive(),
 })
 
-type UserSession = z.infer<typeof sessionSchema>
+type StoredSession = z.infer<typeof sessionSchema>
+type UserSession = Pick<StoredSession, "id" | "role">
 export type Cookies = {
   set: (
     key: string,
@@ -22,6 +24,7 @@ export type Cookies = {
       httpOnly?: boolean
       sameSite?: "strict" | "lax"
       expires?: number
+      path?: string
     }
   ) => void
   get: (key: string) => { name: string; value: string } | undefined
@@ -41,22 +44,35 @@ export async function updateUserSessionData(
 ) {
   const sessionId = cookies.get(COOKIE_SESSION_KEY)?.value
   if (sessionId == null) return null
+  const existingSession = await getUserSessionById(sessionId)
+  if (existingSession == null) return null
 
-  await redisClient.set(`session:${sessionId}`, sessionSchema.parse(user), {
-    ex: SESSION_EXPIRATION_SECONDS,
+  const updatedSession = sessionSchema.parse({
+    ...user,
+    expiresAt: existingSession.expiresAt,
+  })
+  await redisClient.set(`session:${sessionId}`, updatedSession, {
+    ex: remainingSeconds(updatedSession.expiresAt),
   })
 }
 
 export async function createUserSession(
   user: UserSession,
-  cookies: Pick<Cookies, "set">
+  cookies: Pick<Cookies, "get" | "set">
 ) {
-  const sessionId = crypto.randomBytes(512).toString("hex").normalize()
-  await redisClient.set(`session:${sessionId}`, sessionSchema.parse(user), {
+  const existingSessionId = cookies.get(COOKIE_SESSION_KEY)?.value
+  if (existingSessionId != null) {
+    await redisClient.del(`session:${existingSessionId}`)
+  }
+
+  const sessionId = crypto.randomBytes(32).toString("hex").normalize()
+  const expiresAt = Date.now() + SESSION_EXPIRATION_SECONDS * 1000
+  const session = sessionSchema.parse({ ...user, expiresAt })
+  await redisClient.set(`session:${sessionId}`, session, {
     ex: SESSION_EXPIRATION_SECONDS,
   })
 
-  setCookie(sessionId, cookies)
+  setCookie(sessionId, expiresAt, cookies)
 }
 
 export async function updateUserSessionExpiration(
@@ -69,9 +85,9 @@ export async function updateUserSessionExpiration(
   if (user == null) return
 
   await redisClient.set(`session:${sessionId}`, user, {
-    ex: SESSION_EXPIRATION_SECONDS,
+    ex: remainingSeconds(user.expiresAt),
   })
-  setCookie(sessionId, cookies)
+  setCookie(sessionId, user.expiresAt, cookies)
 }
 
 export async function removeUserFromSession(
@@ -84,12 +100,17 @@ export async function removeUserFromSession(
   cookies.delete(COOKIE_SESSION_KEY)
 }
 
-function setCookie(sessionId: string, cookies: Pick<Cookies, "set">) {
+function setCookie(
+  sessionId: string,
+  expiresAt: number,
+  cookies: Pick<Cookies, "set">
+) {
   cookies.set(COOKIE_SESSION_KEY, sessionId, {
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
     httpOnly: true,
     sameSite: "lax",
-    expires: Date.now() + SESSION_EXPIRATION_SECONDS * 1000,
+    expires: expiresAt,
+    path: "/",
   })
 }
 
@@ -98,5 +119,14 @@ async function getUserSessionById(sessionId: string) {
 
   const { success, data: user } = sessionSchema.safeParse(rawUser)
 
-  return success ? user : null
+  if (!success) return null
+  if (user.expiresAt <= Date.now()) {
+    await redisClient.del(`session:${sessionId}`)
+    return null
+  }
+  return user
+}
+
+function remainingSeconds(expiresAt: number) {
+  return Math.max(1, Math.ceil((expiresAt - Date.now()) / 1000))
 }

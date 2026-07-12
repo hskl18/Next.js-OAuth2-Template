@@ -4,25 +4,36 @@ import { z } from "zod"
 import { redirect } from "next/navigation"
 import { signInSchema, signUpSchema } from "./schemas"
 import { db } from "@/drizzle/db"
-import { OAuthProvider, UserTable } from "@/drizzle/schema"
-import { eq } from "drizzle-orm"
+import { OAuthProvider, oAuthProviders, UserTable } from "@/drizzle/schema"
+import { eq, sql } from "drizzle-orm"
 import {
   comparePasswords,
   generateSalt,
   hashPassword,
 } from "../core/passwordHasher"
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { createUserSession, removeUserFromSession } from "../core/session"
 import { getOAuthClient } from "../core/oauth/base"
+import { enforceAuthRateLimit } from "../core/rateLimit"
+import { getClientAddress } from "./requestIdentity"
 
 export async function signIn(unsafeData: z.infer<typeof signInSchema>) {
   const { success, data } = signInSchema.safeParse(unsafeData)
 
   if (!success) return "Unable to log you in"
+  const clientAddress = getClientAddress(await headers())
+  try {
+    await enforceAuthRateLimit(
+      "sign-in",
+      `${clientAddress}:${data.email.trim().toLowerCase()}`
+    )
+  } catch {
+    return "Unable to log you in"
+  }
 
   const user = await db.query.UserTable.findFirst({
     columns: { password: true, salt: true, id: true, email: true, role: true },
-    where: eq(UserTable.email, data.email),
+    where: eq(sql`lower(${UserTable.email})`, data.email),
   })
 
   if (user == null || user.password == null || user.salt == null) {
@@ -46,12 +57,21 @@ export async function signUp(unsafeData: z.infer<typeof signUpSchema>) {
   const { success, data } = signUpSchema.safeParse(unsafeData)
 
   if (!success) return "Unable to create account"
+  const clientAddress = getClientAddress(await headers())
+  try {
+    await enforceAuthRateLimit(
+      "sign-up",
+      `${clientAddress}:${data.email.trim().toLowerCase()}`
+    )
+  } catch {
+    return "Unable to create account"
+  }
 
   const existingUser = await db.query.UserTable.findFirst({
-    where: eq(UserTable.email, data.email),
+    where: eq(sql`lower(${UserTable.email})`, data.email),
   })
 
-  if (existingUser != null) return "Account already exists for this email"
+  if (existingUser != null) return "Unable to create account"
 
   try {
     const salt = generateSalt()
@@ -82,6 +102,17 @@ export async function logOut() {
 }
 
 export async function oAuthSignIn(provider: OAuthProvider) {
-  const oAuthClient = getOAuthClient(provider)
+  const parsedProvider = z.enum(oAuthProviders).safeParse(provider)
+  if (!parsedProvider.success) return "Unable to start OAuth sign in"
+  const clientAddress = getClientAddress(await headers())
+  try {
+    await enforceAuthRateLimit(
+      "oauth-start",
+      `${clientAddress}:${parsedProvider.data}`
+    )
+  } catch {
+    return "Unable to start OAuth sign in"
+  }
+  const oAuthClient = getOAuthClient(parsedProvider.data)
   redirect(oAuthClient.createAuthUrl(await cookies()))
 }
