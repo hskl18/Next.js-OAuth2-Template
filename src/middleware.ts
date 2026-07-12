@@ -7,6 +7,8 @@ import {
 const privateRoutes = ["/private"]
 const adminRoutes = ["/admin"]
 
+export const runtime = "nodejs"
+
 export async function middleware(request: NextRequest) {
   const response = (await middlewareAuth(request)) ?? NextResponse.next()
 

@@ -7,12 +7,16 @@ import { UserTable } from "@/drizzle/schema"
 import { eq } from "drizzle-orm"
 import { cookies } from "next/headers"
 
-export async function toggleRole() {
+export async function dropAdminRole() {
   const user = await getCurrentUser({ redirectIfNotFound: true })
+
+  if (user.role !== "admin") {
+    throw new Error("Forbidden")
+  }
 
   const [updatedUser] = await db
     .update(UserTable)
-    .set({ role: user.role === "admin" ? "user" : "admin" })
+    .set({ role: "user" })
     .where(eq(UserTable.id, user.id))
     .returning({ id: UserTable.id, role: UserTable.role })
 
