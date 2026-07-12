@@ -19,6 +19,7 @@ export function createDiscordOAuthClient() {
         username: z.string(),
         global_name: z.string().nullable(),
         email: z.string().email(),
+        verified: z.literal(true),
       }),
       parser: user => ({
         id: user.id,

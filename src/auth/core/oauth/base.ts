@@ -10,6 +10,10 @@ const STATE_COOKIE_KEY = "oAuthState"
 const CODE_VERIFIER_COOKIE_KEY = "oAuthCodeVerifier"
 // Ten minutes in seconds
 const COOKIE_EXPIRATION_SECONDS = 60 * 10
+const PROVIDER_REQUEST_TIMEOUT_MS = 5_000
+
+type OAuthIdentity = { id: string; email: string; name: string }
+type UserInfoFetcher = <U>(url: string, schema: z.ZodSchema<U>) => Promise<U>
 
 export class OAuthClient<T> {
   private readonly provider: OAuthProvider
@@ -23,11 +27,17 @@ export class OAuthClient<T> {
   }
   private readonly userInfo: {
     schema: z.ZodSchema<T>
-    parser: (data: T) => { id: string; email: string; name: string }
+    parser: (
+      data: T,
+      context: { fetch: UserInfoFetcher }
+    ) => OAuthIdentity | Promise<OAuthIdentity>
   }
   private readonly tokenSchema = z.object({
-    access_token: z.string(),
-    token_type: z.string(),
+    access_token: z.string().min(1).max(4_096),
+    token_type: z
+      .string()
+      .transform(value => value.toLowerCase())
+      .pipe(z.literal("bearer")),
   })
 
   constructor({
@@ -49,7 +59,10 @@ export class OAuthClient<T> {
     }
     userInfo: {
       schema: z.ZodSchema<T>
-      parser: (data: T) => { id: string; email: string; name: string }
+      parser: (
+        data: T,
+        context: { fetch: UserInfoFetcher }
+      ) => OAuthIdentity | Promise<OAuthIdentity>
     }
   }) {
     this.provider = provider
@@ -81,33 +94,50 @@ export class OAuthClient<T> {
     return url.toString()
   }
 
-  async fetchUser(code: string, state: string, cookies: Pick<Cookies, "get">) {
-    const isValidState = await validateState(state, cookies)
-    if (!isValidState) throw new InvalidStateError()
+  discardAuthAttempt(
+    state: string,
+    cookies: Pick<Cookies, "get" | "delete">
+  ) {
+    const attempt = consumeOAuthAttempt(cookies)
+    if (!constantTimeEqual(attempt.state, state)) throw new InvalidStateError()
+  }
+
+  clearAuthAttempt(cookies: Pick<Cookies, "get" | "delete">) {
+    consumeOAuthAttempt(cookies)
+  }
+
+  async fetchUser(
+    code: string,
+    state: string,
+    cookies: Pick<Cookies, "get" | "delete">
+  ) {
+    const attempt = consumeOAuthAttempt(cookies)
+    if (!constantTimeEqual(attempt.state, state)) throw new InvalidStateError()
+    if (attempt.codeVerifier == null) throw new InvalidCodeVerifierError()
 
     const { accessToken, tokenType } = await this.fetchToken(
       code,
-      getCodeVerifier(cookies)
+      attempt.codeVerifier
     )
 
-    const user = await fetch(this.urls.user, {
-      headers: {
-        Authorization: `${tokenType} ${accessToken}`,
-      },
-    })
-      .then(res => res.json())
-      .then(rawData => {
-        const { data, success, error } = this.userInfo.schema.safeParse(rawData)
-        if (!success) throw new InvalidUserError(error)
-
-        return data
+    const fetchUserInfo: UserInfoFetcher = async (url, schema) => {
+      const rawData = await fetchProviderJson(url, {
+        headers: {
+          Accept: "application/json",
+          Authorization: `${tokenType} ${accessToken}`,
+        },
       })
+      const { data, success, error } = schema.safeParse(rawData)
+      if (!success) throw new InvalidUserError(error)
+      return data
+    }
+    const user = await fetchUserInfo(this.urls.user, this.userInfo.schema)
 
-    return this.userInfo.parser(user)
+    return this.userInfo.parser(user, { fetch: fetchUserInfo })
   }
 
   private fetchToken(code: string, codeVerifier: string) {
-    return fetch(this.urls.token, {
+    return fetchProviderJson(this.urls.token, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -121,17 +151,15 @@ export class OAuthClient<T> {
         client_secret: this.clientSecret,
         code_verifier: codeVerifier,
       }),
-    })
-      .then(res => res.json())
-      .then(rawData => {
-        const { data, success, error } = this.tokenSchema.safeParse(rawData)
-        if (!success) throw new InvalidTokenError(error)
+    }).then(rawData => {
+      const { data, success, error } = this.tokenSchema.safeParse(rawData)
+      if (!success) throw new InvalidTokenError(error)
 
-        return {
-          accessToken: data.access_token,
-          tokenType: data.token_type,
-        }
-      })
+      return {
+        accessToken: data.access_token,
+        tokenType: data.token_type,
+      }
+    })
   }
 }
 
@@ -149,6 +177,7 @@ export function getOAuthClient(provider: OAuthProvider) {
 class InvalidTokenError extends Error {
   constructor(zodError: z.ZodError) {
     super("Invalid Token")
+    this.name = "InvalidTokenError"
     this.cause = zodError
   }
 }
@@ -156,6 +185,7 @@ class InvalidTokenError extends Error {
 class InvalidUserError extends Error {
   constructor(zodError: z.ZodError) {
     super("Invalid User")
+    this.name = "InvalidUserError"
     this.cause = zodError
   }
 }
@@ -163,22 +193,52 @@ class InvalidUserError extends Error {
 class InvalidStateError extends Error {
   constructor() {
     super("Invalid State")
+    this.name = "InvalidStateError"
   }
 }
 
 class InvalidCodeVerifierError extends Error {
   constructor() {
     super("Invalid Code Verifier")
+    this.name = "InvalidCodeVerifierError"
+  }
+}
+
+class OAuthProviderResponseError extends Error {
+  constructor() {
+    super("OAuth provider request failed")
+    this.name = "OAuthProviderResponseError"
+  }
+}
+
+async function fetchProviderJson(url: string, init: RequestInit) {
+  let response: Response
+  try {
+    response = await fetch(url, {
+      ...init,
+      redirect: "error",
+      signal: AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS),
+    })
+  } catch {
+    throw new OAuthProviderResponseError()
+  }
+  if (!response.ok) throw new OAuthProviderResponseError()
+
+  try {
+    return await response.json()
+  } catch {
+    throw new OAuthProviderResponseError()
   }
 }
 
 function createState(cookies: Pick<Cookies, "set">) {
   const state = crypto.randomBytes(64).toString("hex").normalize()
   cookies.set(STATE_COOKIE_KEY, state, {
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
     httpOnly: true,
     sameSite: "lax",
     expires: Date.now() + COOKIE_EXPIRATION_SECONDS * 1000,
+    path: "/",
   })
   return state
 }
@@ -186,21 +246,29 @@ function createState(cookies: Pick<Cookies, "set">) {
 function createCodeVerifier(cookies: Pick<Cookies, "set">) {
   const codeVerifier = crypto.randomBytes(64).toString("hex").normalize()
   cookies.set(CODE_VERIFIER_COOKIE_KEY, codeVerifier, {
-    secure: true,
+    secure: process.env.NODE_ENV === "production",
     httpOnly: true,
     sameSite: "lax",
     expires: Date.now() + COOKIE_EXPIRATION_SECONDS * 1000,
+    path: "/",
   })
   return codeVerifier
 }
 
-function validateState(state: string, cookies: Pick<Cookies, "get">) {
-  const cookieState = cookies.get(STATE_COOKIE_KEY)?.value
-  return cookieState === state
+function consumeOAuthAttempt(cookies: Pick<Cookies, "get" | "delete">) {
+  const attempt = {
+    state: cookies.get(STATE_COOKIE_KEY)?.value,
+    codeVerifier: cookies.get(CODE_VERIFIER_COOKIE_KEY)?.value,
+  }
+  cookies.delete(STATE_COOKIE_KEY)
+  cookies.delete(CODE_VERIFIER_COOKIE_KEY)
+  return attempt
 }
 
-function getCodeVerifier(cookies: Pick<Cookies, "get">) {
-  const codeVerifier = cookies.get(CODE_VERIFIER_COOKIE_KEY)?.value
-  if (codeVerifier == null) throw new InvalidCodeVerifierError()
-  return codeVerifier
+function constantTimeEqual(expected: string | undefined, actual: string) {
+  if (expected == null) return false
+  if (expected.length !== actual.length) return false
+  const expectedBuffer = Buffer.from(expected)
+  const actualBuffer = Buffer.from(actual)
+  return crypto.timingSafeEqual(expectedBuffer, actualBuffer)
 }
