@@ -13,15 +13,16 @@ export default async function SignIn({
   searchParams: Promise<{ oauthError?: string }>
 }) {
   const { oauthError } = await searchParams
+  const hasOAuthError = oauthError === "Failed to connect. Please try again."
 
   return (
     <div className="container mx-auto p-4 max-w-[750px]">
       <Card>
         <CardHeader>
           <CardTitle>Sign In</CardTitle>
-          {oauthError && (
+          {hasOAuthError && (
             <CardDescription className="text-destructive">
-              {oauthError}
+              Failed to connect. Please try again.
             </CardDescription>
           )}
         </CardHeader>
