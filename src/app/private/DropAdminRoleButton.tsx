@@ -1,8 +1,14 @@
 "use client"
 
-import { dropAdminRole } from "@/actions/dropAdminRole"
 import { Button } from "@/components/ui/button"
+import { useFormStatus } from "react-dom"
 
 export function DropAdminRoleButton() {
-  return <Button onClick={dropAdminRole}>Drop admin access</Button>
+  const { pending } = useFormStatus()
+
+  return (
+    <Button type="submit" disabled={pending}>
+      {pending ? "Dropping admin access..." : "Drop admin access"}
+    </Button>
+  )
 }

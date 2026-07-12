@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 const mocks = vi.hoisted(() => ({
   cookies: vi.fn(),
   getCurrentUser: vi.fn(),
+  revalidatePath: vi.fn(),
   updateUserSessionData: vi.fn(),
   update: vi.fn(),
 }))
 
 vi.mock("next/headers", () => ({ cookies: mocks.cookies }))
+vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }))
 vi.mock("@/auth/nextjs/currentUser", () => ({
   getCurrentUser: mocks.getCurrentUser,
 }))
@@ -34,6 +36,7 @@ describe("dropAdminRole authorization", () => {
 
     expect(mocks.update).not.toHaveBeenCalled()
     expect(mocks.updateUserSessionData).not.toHaveBeenCalled()
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
 
   it("prevents a regular user from invoking the admin-only action", async () => {
@@ -41,6 +44,22 @@ describe("dropAdminRole authorization", () => {
 
     expect(mocks.update).not.toHaveBeenCalled()
     expect(mocks.updateUserSessionData).not.toHaveBeenCalled()
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("fails clearly when the admin row no longer exists", async () => {
+    const returning = vi.fn().mockResolvedValue([])
+    const where = vi.fn().mockReturnValue({ returning })
+    const set = vi.fn().mockReturnValue({ where })
+    mocks.getCurrentUser.mockResolvedValue({ id: "admin-1", role: "admin" })
+    mocks.update.mockReturnValue({ set })
+
+    await expect(dropAdminRole()).rejects.toThrow(
+      "Failed to drop admin access: user was not updated"
+    )
+
+    expect(mocks.updateUserSessionData).not.toHaveBeenCalled()
+    expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
 
   it("allows an admin to drop their access to the user role", async () => {
@@ -60,5 +79,6 @@ describe("dropAdminRole authorization", () => {
       updatedUser,
       cookieStore
     )
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/private")
   })
 })

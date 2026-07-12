@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/auth/nextjs/currentUser", () => ({
   getCurrentUser: mocks.getCurrentUser,
 }))
+vi.mock("@/actions/dropAdminRole", () => ({
+  dropAdminRole: "/private",
+}))
 vi.mock("next/link", () => ({
   default: ({ children, href }: { children: React.ReactNode; href: string }) => (
     <a href={href}>{children}</a>
@@ -36,5 +39,6 @@ describe("PrivatePage role controls", () => {
     const html = renderToStaticMarkup(await PrivatePage())
 
     expect(html).toContain("Drop admin access")
+    expect(html).toContain('<form action="/private">')
   })
 })
