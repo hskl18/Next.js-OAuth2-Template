@@ -13,7 +13,7 @@ const COOKIE_EXPIRATION_SECONDS = 60 * 10
 const PROVIDER_REQUEST_TIMEOUT_MS = 5_000
 
 type OAuthIdentity = { id: string; email: string; name: string }
-type UserInfoFetcher = <U>(url: string, schema: z.ZodSchema<U>) => Promise<U>
+type UserInfoFetcher = <U>(url: string, schema: z.ZodType<U>) => Promise<U>
 
 export class OAuthClient<T> {
   private readonly provider: OAuthProvider
@@ -26,7 +26,7 @@ export class OAuthClient<T> {
     user: string
   }
   private readonly userInfo: {
-    schema: z.ZodSchema<T>
+    schema: z.ZodType<T>
     parser: (
       data: T,
       context: { fetch: UserInfoFetcher }
@@ -58,7 +58,7 @@ export class OAuthClient<T> {
       user: string
     }
     userInfo: {
-      schema: z.ZodSchema<T>
+      schema: z.ZodType<T>
       parser: (
         data: T,
         context: { fetch: UserInfoFetcher }

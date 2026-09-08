@@ -17,7 +17,8 @@ The useful artifact is the account-ownership policy, its database constraints, a
 
 ## 60-second local path
 
-Use Node.js 22 and npm.
+Use Node.js 22.13 or newer within the 22.x release line, Node.js 24, or Node.js 26 and newer, with npm.
+CI uses Node.js 22.
 
 ```bash
 npm ci
@@ -85,7 +86,7 @@ sequenceDiagram
 | Email-based account takeover | Provider identity first and no email auto-link | Core ownership tests and PostgreSQL integration test |
 | Unverified provider email | GitHub verified primary selection and Discord `verified: true` | Provider-specific tests |
 | Concurrent callback ownership ambiguity | Transactional inserts and unique provider constraints | Concurrent PostgreSQL integration test |
-| Session fixation or unbounded extension | Existing Redis session is revoked before login rotation, and middleware preserves the absolute expiration | Session rotation and expiration tests |
+| Session fixation or unbounded extension | Existing Redis session is revoked before login rotation, and the request proxy preserves the absolute expiration | Session rotation and expiration tests |
 | Provider failure or malicious payload | Five-second timeout, no redirects, status checks, JSON and Zod validation | Provider response tests |
 | Brute force and callback abuse | Redis sliding-window limits with hashed identifiers | Rate-limit behavior test |
 | Open redirect through callback parameters | Fixed same-origin destinations only | Callback redirect regression test |
@@ -95,6 +96,11 @@ The implementation trusts Vercel's forwarded client address only when `VERCEL=1`
 Other deployments intentionally share the `unknown-client` bucket until a reviewed trusted-proxy adapter is added.
 
 ## Verification
+
+Type checking uses TypeScript 7 through the `@typescript/native` npm alias.
+The `typescript` alias supplies Microsoft's TypeScript 6 compatibility API for Next.js and typescript-eslint, following the [official side-by-side setup](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0).
+ESLint stays on 9.39.5 because the React, accessibility, and import plugins used by `eslint-config-next` do not yet declare ESLint 10 support.
+`npm run typecheck` generates Next.js route types before checking a fresh checkout.
 
 ```bash
 npm audit --audit-level=low

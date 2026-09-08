@@ -35,7 +35,16 @@ export async function resolveOAuthLogin(
   if (linkedUser != null) return linkedUser
 
   const existingEmailUser = await store.findByEmail(identity.email)
-  if (existingEmailUser != null) throw new AccountLinkRequiredError()
+  if (existingEmailUser != null) {
+    // Another callback can commit the provider binding between the two reads.
+    // Authenticate only that binding; a matching email never grants ownership.
+    const providerWinner = await store.findByProviderAccount(
+      identity.provider,
+      identity.providerAccountId
+    )
+    if (providerWinner != null) return providerWinner
+    throw new AccountLinkRequiredError()
+  }
 
   try {
     return await store.createUserWithAccount(identity)
