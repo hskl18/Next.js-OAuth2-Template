@@ -12,6 +12,7 @@ type Limiter = {
   limit(identifier: string): Promise<{
     success: boolean
     reset: number
+    reason?: string
   }>
 }
 
@@ -32,7 +33,9 @@ export async function enforceAuthRateLimit(
     .update(`${scope}:${rawIdentifier}`)
     .digest("hex")
   const result = await limiter.limit(identifier)
-  if (!result.success) {
+  // Upstash reports success with reason "timeout" when Redis does not answer
+  // in time; an authentication limit that cannot be checked must not pass.
+  if (!result.success || result.reason === "timeout") {
     const retryAfterSeconds = Math.max(
       1,
       Math.min(3_600, Math.ceil((result.reset - Date.now()) / 1_000))
