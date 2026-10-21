@@ -14,5 +14,7 @@ export default defineConfig({
   test: {
     environment: "node",
     clearMocks: true,
+    // Integration files reset the same PostgreSQL tables, so they run one at a time.
+    fileParallelism: process.env.RUN_DB_INTEGRATION !== "1",
   },
 })
