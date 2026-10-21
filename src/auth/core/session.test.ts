@@ -9,7 +9,7 @@ const redis = vi.hoisted(() => ({
 
 vi.mock("@/redis/redis", () => ({ redisClient: redis }))
 
-import { createUserSession, updateUserSessionExpiration } from "./session"
+import { createUserSession } from "./session"
 
 type CookieOptions = Parameters<Cookies["set"]>[2]
 
@@ -42,33 +42,27 @@ describe("session creation", () => {
   it("revokes an existing session before issuing a new login session", async () => {
     const cookies = new CookieJar({ "session-id": "old-session-id" })
 
-    await createUserSession({ id: "user-42", role: "user" }, cookies)
+    await createUserSession({ id: "user-42", sessionVersion: 0 }, cookies)
 
     expect(redis.del).toHaveBeenCalledWith("session:old-session-id")
     expect(redis.set).toHaveBeenCalledOnce()
     expect(cookies.get("session-id")?.value).not.toBe("old-session-id")
   })
 
-  it("does not extend a session beyond its original absolute expiration", async () => {
-    const now = Date.now()
-    const expiresAt = now + 60_000
-    const cookies = new CookieJar({ "session-id": "current-session-id" })
-    redis.get.mockResolvedValueOnce({
+  it("gives the stored session and cookie the same seven-day absolute expiration", async () => {
+    const before = Date.now()
+    const cookies = new CookieJar()
+
+    await createUserSession({ id: "user-42", sessionVersion: 3 }, cookies)
+
+    const [key, stored, options] = redis.set.mock.calls[0] ?? []
+    expect(key).toBe(`session:${cookies.get("session-id")?.value}`)
+    expect(stored).toEqual({
       id: "user-42",
-      role: "user",
-      expiresAt,
+      sessionVersion: 3,
+      expiresAt: cookies.options.get("session-id")?.expires,
     })
-
-    await updateUserSessionExpiration(cookies)
-
-    expect(redis.set).toHaveBeenCalledWith(
-      "session:current-session-id",
-      { id: "user-42", role: "user", expiresAt },
-      { ex: expect.any(Number) }
-    )
-    const ttl = redis.set.mock.calls[0]?.[2]?.ex
-    expect(ttl).toBeGreaterThan(0)
-    expect(ttl).toBeLessThanOrEqual(60)
-    expect(cookies.options.get("session-id")?.expires).toBe(expiresAt)
+    expect(options).toEqual({ ex: 60 * 60 * 24 * 7 })
+    expect(stored.expiresAt).toBeGreaterThanOrEqual(before + 7 * 86_400_000)
   })
 })

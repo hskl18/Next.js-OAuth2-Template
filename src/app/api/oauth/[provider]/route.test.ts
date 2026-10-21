@@ -85,7 +85,7 @@ describe("OAuth callback", () => {
     })
     mocks.resolveOAuthLogin.mockResolvedValueOnce({
       id: "local-user-42",
-      role: "user",
+      sessionVersion: 0,
     })
     const request = new NextRequest(
       `http://localhost:3000/api/oauth/github?code=code&state=${validState}&next=https://attacker.example`

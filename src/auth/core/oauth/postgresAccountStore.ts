@@ -23,7 +23,7 @@ export class PostgresOAuthAccountStore implements OAuthAccountStore {
       ),
       with: {
         user: {
-          columns: { id: true, role: true },
+          columns: { id: true, sessionVersion: true },
         },
       },
     })
@@ -34,7 +34,7 @@ export class PostgresOAuthAccountStore implements OAuthAccountStore {
     return (
       (await db.query.UserTable.findFirst({
         where: eq(sql`lower(${UserTable.email})`, email),
-        columns: { id: true, role: true },
+        columns: { id: true, sessionVersion: true },
       })) ?? null
     )
   }
@@ -48,7 +48,10 @@ export class PostgresOAuthAccountStore implements OAuthAccountStore {
             email: identity.email,
             name: identity.name,
           })
-          .returning({ id: UserTable.id, role: UserTable.role })
+          .returning({
+            id: UserTable.id,
+            sessionVersion: UserTable.sessionVersion,
+          })
         if (user == null) throw new Error("User insert returned no row")
 
         await trx.insert(UserOAuthAccountTable).values({
