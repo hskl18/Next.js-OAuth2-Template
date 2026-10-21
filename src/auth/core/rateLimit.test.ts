@@ -62,7 +62,7 @@ describe("authentication rate limiting when Redis misbehaves", () => {
   it("rejects when the real limiter times out instead of allowing the attempt", async () => {
     await expect(
       enforceAuthRateLimit("sign-in", "person@example.com", limiterFor(hangingUrl))
-    ).rejects.toMatchObject({ name: "AuthRateLimitError" })
+    ).rejects.toMatchObject({ name: "AuthRateLimitUnavailableError" })
   })
 
   it("rejects when Redis refuses the connection", async () => {

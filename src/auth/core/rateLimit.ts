@@ -7,6 +7,8 @@ export type AuthRateLimitScope =
   | "sign-up"
   | "oauth-start"
   | "oauth-callback"
+  | "password-setup-email"
+  | "password-setup-client"
 
 type Limiter = {
   limit(identifier: string): Promise<{
@@ -21,6 +23,9 @@ const limiters: Record<AuthRateLimitScope, Limiter> = {
   "sign-up": createLimiter("sign-up", 5, "1 h"),
   "oauth-start": createLimiter("oauth-start", 20, "10 m"),
   "oauth-callback": createLimiter("oauth-callback", 30, "10 m"),
+  // Shared by sign-up and reset so neither can flood one mailbox.
+  "password-setup-email": createLimiter("password-setup-email", 3, "1 h"),
+  "password-setup-client": createLimiter("password-setup-client", 20, "1 h"),
 }
 
 export async function enforceAuthRateLimit(
@@ -35,12 +40,20 @@ export async function enforceAuthRateLimit(
   const result = await limiter.limit(identifier)
   // Upstash reports success with reason "timeout" when Redis does not answer
   // in time; an authentication limit that cannot be checked must not pass.
-  if (!result.success || result.reason === "timeout") {
+  if (result.reason === "timeout") throw new AuthRateLimitUnavailableError()
+  if (!result.success) {
     const retryAfterSeconds = Math.max(
       1,
       Math.min(3_600, Math.ceil((result.reset - Date.now()) / 1_000))
     )
     throw new AuthRateLimitError(retryAfterSeconds)
+  }
+}
+
+export class AuthRateLimitUnavailableError extends Error {
+  constructor() {
+    super("Authentication rate limit could not be checked")
+    this.name = "AuthRateLimitUnavailableError"
   }
 }
 

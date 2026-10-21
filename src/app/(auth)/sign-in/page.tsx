@@ -10,9 +10,9 @@ import {
 export default async function SignIn({
   searchParams,
 }: {
-  searchParams: Promise<{ oauthError?: string }>
+  searchParams: Promise<{ oauthError?: string; passwordSet?: string }>
 }) {
-  const { oauthError } = await searchParams
+  const { oauthError, passwordSet } = await searchParams
   const hasOAuthError = oauthError === "Failed to connect. Please try again."
 
   return (
@@ -23,6 +23,11 @@ export default async function SignIn({
           {hasOAuthError && (
             <CardDescription className="text-destructive">
               Failed to connect. Please try again.
+            </CardDescription>
+          )}
+          {passwordSet === "1" && (
+            <CardDescription role="status">
+              Password set. Sign in with your new password.
             </CardDescription>
           )}
         </CardHeader>

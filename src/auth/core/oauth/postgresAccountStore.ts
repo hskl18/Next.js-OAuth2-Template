@@ -47,6 +47,8 @@ export class PostgresOAuthAccountStore implements OAuthAccountStore {
           .values({
             email: identity.email,
             name: identity.name,
+            // Providers only hand over verified emails (see github.ts, discord.ts).
+            emailVerifiedAt: sql`now()`,
           })
           .returning({
             id: UserTable.id,

@@ -61,13 +61,19 @@ describeWithStores("session revocation across PostgreSQL and Redis", () => {
   })
 
   afterAll(async () => {
+    vi.restoreAllMocks()
     await dbModule.dbPool.end()
   })
 
   async function createUser(role: "admin" | "user") {
     const [user] = await dbModule.db
       .insert(schema.UserTable)
-      .values({ name: "Example Person", email: "person@example.com", role })
+      .values({
+        name: "Example Person",
+        email: "person@example.com",
+        role,
+        emailVerifiedAt: new Date(),
+      })
       .returning({
         id: schema.UserTable.id,
         sessionVersion: schema.UserTable.sessionVersion,
@@ -130,5 +136,58 @@ describeWithStores("session revocation across PostgreSQL and Redis", () => {
     await expect(currentUserOn(freshDevice)).resolves.toMatchObject({
       id: user.id,
     })
+  })
+
+  it("signs every device out when the password is reset", async () => {
+    const { issuePasswordSetupToken } = await import(
+      "@/auth/core/passwordSetup"
+    )
+    const user = await createUser("user")
+    const deviceA = await signedInDevice(user)
+    const deviceB = await signedInDevice(user)
+    const token = await issuePasswordSetupToken(user.id)
+
+    await expect(
+      actions.setPassword({ token, password: "a brand new password" })
+    ).rejects.toMatchObject({ url: "/sign-in?passwordSet=1" })
+
+    await expect(currentUserOn(deviceA)).resolves.toBeNull()
+    await expect(currentUserOn(deviceB)).resolves.toBeNull()
+  })
+
+  it("signs up through the emailed link and then signs in with the new password", async () => {
+    const { redisClient } = await import("@/redis/redis")
+    // Every local run shares the unknown-client budget; start it fresh.
+    const clientKeys = await redisClient.keys(
+      "auth-rate-limit:password-setup-client:*"
+    )
+    if (clientKeys.length > 0) await redisClient.del(...clientKeys)
+    const info = vi.spyOn(console, "info").mockImplementation(() => {})
+    const email = `${crypto.randomUUID()}@example.com`
+
+    await expect(
+      actions.signUp({ name: "New Person", email })
+    ).resolves.toMatchObject({ ok: true })
+    const device = new CookieJar()
+    request.cookies = device
+    await expect(
+      actions.signIn({ email, password: "a brand new password" })
+    ).resolves.toBe("Unable to log you in")
+
+    const link = new URL(
+      String(info.mock.calls.at(-1)?.[0]).match(/http\S+/)?.[0] ?? ""
+    )
+    expect(link.pathname).toBe("/set-password")
+    await expect(
+      actions.setPassword({
+        token: link.searchParams.get("token") ?? "",
+        password: "a brand new password",
+      })
+    ).rejects.toMatchObject({ url: "/sign-in?passwordSet=1" })
+
+    await expect(
+      actions.signIn({ email, password: "a brand new password" })
+    ).rejects.toMatchObject({ url: "/" })
+    await expect(currentUserOn(device)).resolves.toMatchObject({ email })
   })
 })
