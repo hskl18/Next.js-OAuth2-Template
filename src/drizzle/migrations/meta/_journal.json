@@ -29,6 +29,20 @@
       "when": 1792608379469,
       "tag": "0003_minor_unus",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792609659928,
+      "tag": "0004_password_setup",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792609660505,
+      "tag": "0005_backfill_oauth_email_verified",
+      "breakpoints": true
     }
   ]
 }

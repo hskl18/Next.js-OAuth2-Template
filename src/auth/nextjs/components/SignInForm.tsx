@@ -77,6 +77,9 @@ export function SignInForm() {
         />
         <div className="flex gap-4 justify-end">
           <Button asChild variant="link">
+            <Link href="/forgot-password">Forgot password?</Link>
+          </Button>
+          <Button asChild variant="link">
             <Link href="/sign-up">Sign Up</Link>
           </Button>
           <Button type="submit">Sign In</Button>

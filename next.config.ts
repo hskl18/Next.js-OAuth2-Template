@@ -17,6 +17,11 @@ const nextConfig: NextConfig = {
           { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
         ],
       },
+      {
+        // The URL carries a password setup token; keep it out of Referer.
+        source: "/set-password",
+        headers: [{ key: "Referrer-Policy", value: "no-referrer" }],
+      },
     ]
   },
 }
