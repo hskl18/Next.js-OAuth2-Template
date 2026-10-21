@@ -1,6 +1,6 @@
-import type { OAuthProvider, UserRole } from "@/drizzle/schema"
+import type { OAuthProvider } from "@/drizzle/schema"
 
-export type AuthenticatedUser = { id: string; role: UserRole }
+export type AuthenticatedUser = { id: string; sessionVersion: number }
 
 export type VerifiedOAuthIdentity = {
   provider: OAuthProvider

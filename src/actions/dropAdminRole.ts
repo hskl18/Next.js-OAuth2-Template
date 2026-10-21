@@ -1,12 +1,10 @@
 "use server"
 
-import { updateUserSessionData } from "@/auth/core/session"
 import { getCurrentUser } from "@/auth/nextjs/currentUser"
 import { db } from "@/drizzle/db"
 import { UserTable } from "@/drizzle/schema"
 import { eq } from "drizzle-orm"
 import { revalidatePath } from "next/cache"
-import { cookies } from "next/headers"
 
 export async function dropAdminRole() {
   const user = await getCurrentUser({ redirectIfNotFound: true })
@@ -19,12 +17,11 @@ export async function dropAdminRole() {
     .update(UserTable)
     .set({ role: "user" })
     .where(eq(UserTable.id, user.id))
-    .returning({ id: UserTable.id, role: UserTable.role })
+    .returning({ id: UserTable.id })
 
   if (updatedUser == null) {
     throw new Error("Failed to drop admin access: user was not updated")
   }
 
-  await updateUserSessionData(updatedUser, await cookies())
   revalidatePath("/private")
 }

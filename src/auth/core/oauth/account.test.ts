@@ -6,11 +6,11 @@ import {
   resolveOAuthLogin,
 } from "./account"
 
-const existingUser = { id: "existing-user", role: "user" as const }
+const existingUser = { id: "existing-user", sessionVersion: 0 }
 
 describe("OAuth account ownership", () => {
   it("resolves a concurrent callback to the provider account winner", async () => {
-    const providerOwner = { id: "provider-owner", role: "user" as const }
+    const providerOwner = { id: "provider-owner", sessionVersion: 0 }
     let providerLookupCount = 0
     const store: OAuthAccountStore = {
       findByProviderAccount: async () => {
@@ -37,7 +37,7 @@ describe("OAuth account ownership", () => {
   })
 
   it("logs in only the user already attached to the provider account", async () => {
-    const providerOwner = { id: "provider-owner", role: "admin" as const }
+    const providerOwner = { id: "provider-owner", sessionVersion: 3 }
     const store: OAuthAccountStore = {
       findByProviderAccount: async () => providerOwner,
       findByEmail: async () => {
