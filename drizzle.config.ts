@@ -1,3 +1,4 @@
+import "./envConfig"
 import { env } from "@/data/env/server"
 import { defineConfig } from "drizzle-kit"
 

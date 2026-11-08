@@ -27,12 +27,28 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # Upstash-compatible REST proxy, so the app uses its real @upstash/redis client.
+      redis-http:
+        image: hiett/serverless-redis-http:0.0.10
+        env:
+          SRH_MODE: env
+          SRH_TOKEN: ci-token
+          SRH_CONNECTION_STRING: redis://redis:6379
+        ports:
+          - 8079:80
     env:
       DB_PASSWORD: ci-password
       DB_USER: ci-user
       DB_NAME: ci-database
       DB_HOST: localhost
-      REDIS_URL: https://example.com
+      REDIS_URL: http://localhost:8079
       REDIS_TOKEN: ci-token
       OAUTH_REDIRECT_URL_BASE: http://localhost:3000/api/oauth/
       DISCORD_CLIENT_ID: ci-discord-client
@@ -40,6 +56,7 @@ jobs:
       GITHUB_CLIENT_ID: ci-github-client
       GITHUB_CLIENT_SECRET: ci-github-secret
       RUN_DB_INTEGRATION: "1"
+      RUN_REDIS_INTEGRATION: "1"
 
     steps:
       - name: Checkout
