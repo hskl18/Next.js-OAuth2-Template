@@ -65,30 +65,30 @@ Migration `0005` confirms existing OAuth-only accounts and revokes the sessions 
 
 ## Failures found and fixed
 
-1. **Role escalation** ([#1](https://github.com/hskl18/Next.js-OAuth2-Template/pull/1)).
+1. **Role escalation** ([#1](https://github.com/hskl18/nextjs-oauth-security-reference/pull/1)).
    A public Server Action trusted the caller and let a regular user set their own role to admin.
    It was replaced by an admin-only action that can only lower the caller's role, with anonymous, user, and admin tests.
-2. **Email-based account takeover** ([#2](https://github.com/hskl18/Next.js-OAuth2-Template/pull/2)).
+2. **Email-based account takeover** ([#2](https://github.com/hskl18/nextjs-oauth-security-reference/pull/2)).
    The original callback signed in an existing local user whose email matched the OAuth email and ignored conflicting provider-link inserts.
    This produced the provider-first policy and the PostgreSQL constraints above.
-3. **Stale admin access on a second device** ([#5](https://github.com/hskl18/Next.js-OAuth2-Template/pull/5)).
+3. **Stale admin access on a second device** ([#5](https://github.com/hskl18/nextjs-oauth-security-reference/pull/5)).
    Sessions cached the role in Redis and a role change updated only the requesting session, so another device kept admin access until its session expired.
    Authorization now reads the role from PostgreSQL on each request.
-4. **A logged-out session written back** ([#5](https://github.com/hskl18/Next.js-OAuth2-Template/pull/5)).
+4. **A logged-out session written back** ([#5](https://github.com/hskl18/nextjs-oauth-security-reference/pull/5)).
    The request proxy read and rewrote the session on every request, so a request that read it before a concurrent logout could store it again.
    The proxy and every post-login session write were removed.
-5. **Rate limits failing open** ([#6](https://github.com/hskl18/Next.js-OAuth2-Template/pull/6)).
+5. **Rate limits failing open** ([#6](https://github.com/hskl18/nextjs-oauth-security-reference/pull/6)).
    `@upstash/ratelimit` resolves `success: true` with `reason: "timeout"` when Redis does not answer in time, and the app checked only `success`.
    A unit test now runs the real limiter against a server that never answers and fails without the fix.
-6. **Rate limits broken on stock Redis** ([#6](https://github.com/hskl18/Next.js-OAuth2-Template/pull/6)).
+6. **Rate limits broken on stock Redis** ([#6](https://github.com/hskl18/nextjs-oauth-security-reference/pull/6)).
    `@upstash/ratelimit` 2.1.0 and later prefix every Lua script with an `allow-key-locking` flag that only Upstash accepts ([upstash/ratelimit-js#162](https://github.com/upstash/ratelimit-js/issues/162)).
    Every unit test passed because Redis was mocked; the new integration tests against Redis 7 failed on every limit call, and the dependency was pinned to 2.0.8.
-7. **Verification that activates an attacker's password** ([#7](https://github.com/hskl18/Next.js-OAuth2-Template/pull/7)).
+7. **Verification that activates an attacker's password** ([#7](https://github.com/hskl18/nextjs-oauth-security-reference/pull/7)).
    The first design for email ownership verified the address after a password-bearing sign-up; review showed the victim's click would confirm the attacker's password, which led to the emailed-link design above.
-8. **Deadlock between link use and account deletion** ([#7](https://github.com/hskl18/Next.js-OAuth2-Template/pull/7)).
+8. **Deadlock between link use and account deletion** ([#7](https://github.com/hskl18/nextjs-oauth-security-reference/pull/7)).
    With the token row locked before the user row, a two-session `psql` check reproduced `deadlock detected` against a user delete, whose cascade locks in the opposite order.
    Consumption now locks the user first, and the same check found no deadlock.
-9. **A quick start that did not run** ([#6](https://github.com/hskl18/Next.js-OAuth2-Template/pull/6)).
+9. **A quick start that did not run** ([#6](https://github.com/hskl18/nextjs-oauth-security-reference/pull/6)).
    `docker compose` read `.env` rather than `.env.local`, and drizzle-kit never loaded `.env.local`.
    Compose now takes `--env-file .env.local`, and `drizzle.config.ts` loads it through `@next/env`.
 

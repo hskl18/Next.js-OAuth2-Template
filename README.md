@@ -1,6 +1,6 @@
 # Next.js OAuth 2.0 Security Reference
 
-[![CI](https://github.com/hskl18/Next.js-OAuth2-Template/actions/workflows/ci.yml/badge.svg)](https://github.com/hskl18/Next.js-OAuth2-Template/actions/workflows/ci.yml)
+[![CI](https://github.com/hskl18/nextjs-oauth-security-reference/actions/workflows/ci.yml/badge.svg)](https://github.com/hskl18/nextjs-oauth-security-reference/actions/workflows/ci.yml)
 
 GitHub and Discord sign-in plus email-link passwords for Next.js, built so that a matching email never counts as proof of account ownership and only the mailbox holder ever chooses a password.
 
