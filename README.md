@@ -1,68 +1,76 @@
 # Next.js OAuth 2.0 Security Reference
 
-This repository demonstrates password and OAuth sign-in without treating a matching provider email as proof that two accounts have the same owner, and without letting anyone but the mailbox holder choose an account's password.
+[![CI](https://github.com/hskl18/Next.js-OAuth2-Template/actions/workflows/ci.yml/badge.svg)](https://github.com/hskl18/Next.js-OAuth2-Template/actions/workflows/ci.yml)
 
-It is a security-focused reference implementation, not a drop-in production identity provider.
-The useful artifact is the account-ownership policy, its database constraints, and the regression tests around failure and concurrency.
+GitHub and Discord sign-in plus email-link passwords for Next.js, built so that a matching email never counts as proof of account ownership and only the mailbox holder ever chooses a password.
 
-## What this proves
+**Status: reference implementation, v0.2.0.** It is not a drop-in identity provider and has no production deployment.
+Production builds disable password sign-up and reset until an email provider is wired in.
 
-- GitHub identity uses `(provider, providerAccountId)` and a verified primary email from `/user/emails`.
-- Discord identity requires the provider `verified` field.
-- An OAuth email matching an existing local account does not authenticate or silently link that account.
-- State and PKCE verifier cookies are one-time values and are cleared after success, denial, malformed callbacks, rate limits, and validation failures.
-- A successful password or OAuth login revokes the previous session before issuing a new opaque session identifier with an absolute seven-day lifetime.
-- Sessions name a user and a session version only; role and revocation state are read from PostgreSQL on every authorized request, so a role change or sign-out-everywhere applies to every device on its next request.
-- Protected pages and actions check authorization themselves; there is no request proxy to bypass or to rewrite sessions concurrently.
-- PostgreSQL uniqueness constraints make provider ownership and one-account-per-provider rules enforceable under concurrent callbacks.
-- Redis-backed limits cover password sign-in, sign-up, password setup emails, OAuth start, and OAuth callback attempts.
-- Sign-up asks only for a name and email; the password is set through a one-hour emailed link, so a pre-registered email cannot carry an attacker's password. Password reset is the same flow.
-- Setup links are single-use under concurrency, only their SHA-256 is stored, each user has at most one live link, and using one confirms the email and signs out every device.
+## Headline result
 
-## 60-second local path
+CI runs 77 tests in 22 files on every push and pull request.
+19 of them, in 5 integration files, run only against real PostgreSQL 17 and Redis 7, so database constraints, row locks, and Redis scripts are exercised rather than mocked.
 
-Use Node.js 22.13 or newer within the 22.x release line, Node.js 24, or Node.js 26 and newer, with npm.
-CI uses Node.js 22.
+| Attack or race | What the test shows | Test file |
+| --- | --- | --- |
+| Two concurrent OAuth callbacks for one new provider account | Both resolve to one user and one provider link | `postgresAccountStore.integration.test.ts` |
+| OAuth email that matches an existing local account | Sign-in is refused and no provider identity is attached | `postgresAccountStore.integration.test.ts` |
+| Two concurrent uses of one password setup link | Exactly one succeeds | `passwordSetup.integration.test.ts` |
+| Three concurrent link requests for one user | Exactly one link stays live | `passwordSetup.integration.test.ts` |
+| Admin role removed while signed in on two devices | The other device is a plain user on its next request | `sessionRevocation.integration.test.ts` |
+| Login that read the session version before a concurrent sign-out-everywhere | Its session is rejected | `sessionRevocation.integration.test.ts` |
+| Sixth sign-up attempt within an hour | Rejected, and Redis keys never contain the raw email | `rateLimit.integration.test.ts` |
+| Redis that never answers or refuses connections | The rate limit rejects the attempt | `rateLimit.test.ts` |
+
+[DESIGN.md](DESIGN.md) explains the decisions behind these rules and nine failures that were found and fixed, including a rate limiter that failed open and a deadlock reproduced in PostgreSQL.
+
+## Run it
+
+Requires Docker and Node.js 22.13 or newer within the 22.x line, Node.js 24, or Node.js 26 and newer.
 
 ```bash
-npm ci
-cp .env.example .env.local
-# Fill in the GitHub and Discord OAuth app credentials in .env.local.
-docker compose --env-file .env.local up -d
-npm run db:migrate
-npm run dev
+cp .env.example .env.local && docker compose --env-file .env.local up -d && npm ci && npm run db:migrate && npm run dev
 ```
 
 Open `http://localhost:3000`.
-
 Docker Compose runs PostgreSQL, Redis, and [serverless-redis-http](https://github.com/hiett/serverless-redis-http), an Upstash-compatible REST proxy, so the app uses the same `@upstash/redis` client locally as against Upstash.
-The defaults in `.env.example` match the Compose services; `drizzle.config.ts` loads `.env.local` through `@next/env`.
-Provider callbacks require separate GitHub and Discord OAuth applications.
-
-Configure callback URLs as:
+In development, password setup links are printed to the server console instead of being emailed.
+GitHub and Discord sign-in need your own OAuth apps: replace the `replace-me` values in `.env.local` and register these callback URLs.
 
 ```text
 http://localhost:3000/api/oauth/github
 http://localhost:3000/api/oauth/discord
 ```
 
-Set `OAUTH_REDIRECT_URL_BASE=http://localhost:3000/api/oauth/`.
+To run the full suite, including the integration tests, against a separate database (they delete every user):
 
-## Account-linking policy
+```bash
+docker compose --env-file .env.local exec db createdb -U postgres oauth_template_test
+set -a; source .env.local; set +a
+export DB_NAME=oauth_template_test RUN_DB_INTEGRATION=1 RUN_REDIS_INTEGRATION=1
+npm run db:migrate
+npm test
+```
 
-The callback always resolves `(provider, providerAccountId)` first.
+Without `RUN_DB_INTEGRATION` and `RUN_REDIS_INTEGRATION`, `npm test` runs the 58 tests that need neither service.
 
-1. If the provider account is already linked, only its attached local user can sign in.
-2. If the provider account is new and its verified email is unused, the callback creates one user and one provider link in a transaction.
-3. If the verified email already belongs to a local user, the callback fails with a generic public error.
-4. A concurrent insert conflict is re-read from PostgreSQL, and only the database owner of the provider identity is returned.
+## Non-goals
 
-Password setup links go only to accounts that already use a password or have no credential yet; OAuth-only accounts never gain mailbox-based password access.
-If someone pre-registers another person's email, the owner can claim it with Sign Up or Forgot password: only the mailbox receives the link, and using it replaces the password and revokes every session.
-Until that happens, the unclaimed email still blocks OAuth sign-in for the same address (rule 3).
+- Replacing Auth.js, Better Auth, an enterprise identity provider, or a managed OAuth broker
+- Supporting arbitrary OAuth providers through runtime configuration
+- Merging social accounts based only on email
+- Claiming compliance, production readiness, or complete resistance to account takeover
 
-Explicit account linking is intentionally not implemented yet.
-A future linking flow must start from an authenticated local session, require fresh provider authorization, and show a confirmation before committing the link.
+## What this implements
+
+- OAuth identity is resolved by `(provider, providerAccountId)` first; an email that matches an existing local account never signs in to or links that account.
+- GitHub requires a verified primary email from `/user/emails`, and Discord requires its `verified` field.
+- OAuth `state` and the PKCE verifier are one-time cookies, cleared after success, denial, malformed callbacks, rate limits, and validation failures.
+- Sessions are opaque Redis identifiers with an absolute seven-day lifetime, rotated on every login.
+- Role and revocation state come from PostgreSQL on every authorized request, so a role change, sign-out-everywhere, or password reset applies to every device on its next request.
+- Password sign-up and reset set the password only through a one-hour, single-use emailed link.
+- Per-flow Redis rate limits with hashed keys cover password sign-in, sign-up, password setup emails, OAuth start, and OAuth callback, and fail closed when Redis is slow or unreachable.
 
 ## Architecture
 
@@ -124,18 +132,8 @@ npm test
 npm run build
 ```
 
-The default local test run skips integration tests.
 `RUN_DB_INTEGRATION=1` enables the PostgreSQL tests, and `RUN_REDIS_INTEGRATION=1` enables the Redis tests; the session-revocation tests need both.
-GitHub Actions starts PostgreSQL 17, Redis 7, and serverless-redis-http, applies the generated migrations, sets both flags, and runs the same suite against real database constraints and real Redis scripts.
-The integration tests delete every user and OAuth account, so run them locally against a disposable database, not the one `npm run dev` uses:
-
-```bash
-docker compose --env-file .env.local exec db createdb -U postgres oauth_template_test
-set -a; source .env.local; set +a
-export DB_NAME=oauth_template_test RUN_DB_INTEGRATION=1 RUN_REDIS_INTEGRATION=1
-npm run db:migrate
-npm test
-```
+GitHub Actions starts PostgreSQL 17, Redis 7, and serverless-redis-http, applies the generated migrations, sets both flags, and runs the whole suite.
 
 The test matrix covers:
 
@@ -165,7 +163,7 @@ The test matrix covers:
 
 ## Security boundaries and limitations
 
-- Email delivery has only a development console transport. In production builds sign-up and reset are disabled with a visible message until a provider is wired into `src/auth/core/email.ts`.
+- Email delivery has only a development console transport; production builds disable sign-up and reset with a visible message until a provider is wired into `src/auth/core/email.ts`.
 - Delivery runs before the response, so its latency can hint that an account exists once a real provider is used.
 - Password accounts created before email confirmation existed must use Forgot password before they can sign in again.
 - There is no MFA, recovery-code flow, account deletion flow, or explicit OAuth account-linking UI.
@@ -175,13 +173,6 @@ The test matrix covers:
 - Provider tokens are used only for the callback exchange and are not persisted.
 - The example has no production deployment, operational monitoring, audit log, incident response automation, or formal security assessment.
 - Docker Compose is a local development dependency and is not a production deployment design.
-
-## Non-goals
-
-- Replacing Auth.js, Better Auth, an enterprise identity provider, or a managed OAuth broker
-- Supporting arbitrary OAuth providers through runtime configuration
-- Demonstrating social-account merging based only on email
-- Claiming compliance, production readiness, or complete resistance to account takeover
 
 ## Repository map
 
@@ -195,7 +186,8 @@ The test matrix covers:
 | `src/auth/core/rateLimit.ts` | Hashed Redis rate-limit keys and policy |
 | `src/auth/core/passwordSetup.ts` | Emailed password setup links for sign-up and reset |
 | `src/app/api/oauth/[provider]/route.ts` | OAuth callback boundary |
-| `src/drizzle/schema.ts` | User and provider-account constraints |
+| `src/drizzle/schema.ts` | User, provider-account, and setup-token constraints |
+| `DESIGN.md` | Decisions, hard parts, and failures found and fixed |
 
 ## Reporting a vulnerability
 
