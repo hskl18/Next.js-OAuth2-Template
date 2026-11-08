@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint src tailwind.config.ts drizzle.config.ts next.config.ts vitest.config.ts eslint.config.mjs --max-warnings 0",
+    "lint": "eslint src envConfig.ts tailwind.config.ts drizzle.config.ts next.config.ts vitest.config.ts eslint.config.mjs --max-warnings 0",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
@@ -33,6 +33,7 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
+    "@next/env": "16.4.5",
     "@tailwindcss/postcss": "4.3.5",
     "@types/node": "26.6.6",
     "@types/pg": "8.23.1",

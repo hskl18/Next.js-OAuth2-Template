@@ -25,15 +25,16 @@ CI uses Node.js 22.
 ```bash
 npm ci
 cp .env.example .env.local
-docker compose up -d db
+# Fill in the GitHub and Discord OAuth app credentials in .env.local.
+docker compose --env-file .env.local up -d
 npm run db:migrate
 npm run dev
 ```
 
 Open `http://localhost:3000`.
 
-The database runs locally through Docker Compose.
-Session storage and rate limiting currently use an Upstash-compatible Redis HTTP endpoint, so `REDIS_URL` and `REDIS_TOKEN` are required.
+Docker Compose runs PostgreSQL, Redis, and [serverless-redis-http](https://github.com/hiett/serverless-redis-http), an Upstash-compatible REST proxy, so the app uses the same `@upstash/redis` client locally as against Upstash.
+The defaults in `.env.example` match the Compose services; `drizzle.config.ts` loads `.env.local` through `@next/env`.
 Provider callbacks require separate GitHub and Discord OAuth applications.
 
 Configure callback URLs as:
@@ -91,7 +92,7 @@ sequenceDiagram
 | Session fixation or unbounded extension | Existing Redis session is revoked before login rotation, and sessions are never rewritten after login | Session rotation and expiration tests |
 | Stale privileges or lost revocation across devices | Role and session version come from PostgreSQL per request; sign-out-everywhere increments the version | Current-user, admin page, and sign-out-everywhere tests |
 | Provider failure or malicious payload | Five-second timeout, no redirects, status checks, JSON and Zod validation | Provider response tests |
-| Brute force and callback abuse | Redis sliding-window limits with hashed identifiers | Rate-limit behavior test |
+| Brute force and callback abuse | Redis sliding-window limits with hashed identifiers that fail closed when Redis times out or is unreachable | Rate-limit unit tests and Redis integration tests |
 | Open redirect through callback parameters | Fixed same-origin destinations only | Callback redirect regression test |
 
 This model assumes PostgreSQL and Redis are trusted application dependencies and that TLS is terminated by the deployment platform.
@@ -103,6 +104,7 @@ Other deployments intentionally share the `unknown-client` bucket until a review
 Type checking uses TypeScript 7 through the `@typescript/native` npm alias.
 The `typescript` alias supplies Microsoft's TypeScript 6 compatibility API for Next.js and typescript-eslint, following the [official side-by-side setup](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6.0).
 ESLint stays on 9.39.5 because the React, accessibility, and import plugins used by `eslint-config-next` do not yet declare ESLint 10 support.
+`@upstash/ratelimit` stays on 2.0.8 because 2.1.0 and later prefix every Lua script with an Upstash-only `allow-key-locking` flag that stock Redis rejects ([upstash/ratelimit-js#162](https://github.com/upstash/ratelimit-js/issues/162)).
 `npm run typecheck` generates Next.js route types before checking a fresh checkout.
 
 ```bash
@@ -113,8 +115,18 @@ npm test
 npm run build
 ```
 
-The default local test run skips PostgreSQL integration tests when `RUN_DB_INTEGRATION` is unset.
-GitHub Actions starts PostgreSQL 17, applies the generated migrations, sets `RUN_DB_INTEGRATION=1`, and runs the same suite with real database constraints.
+The default local test run skips integration tests.
+`RUN_DB_INTEGRATION=1` enables the PostgreSQL tests, and `RUN_REDIS_INTEGRATION=1` enables the Redis tests; the session-revocation tests need both.
+GitHub Actions starts PostgreSQL 17, Redis 7, and serverless-redis-http, applies the generated migrations, sets both flags, and runs the same suite against real database constraints and real Redis scripts.
+The integration tests delete every user and OAuth account, so run them locally against a disposable database, not the one `npm run dev` uses:
+
+```bash
+docker compose --env-file .env.local exec db createdb -U postgres oauth_template_test
+set -a; source .env.local; set +a
+export DB_NAME=oauth_template_test RUN_DB_INTEGRATION=1 RUN_REDIS_INTEGRATION=1
+npm run db:migrate
+npm test
+```
 
 The test matrix covers:
 
@@ -131,14 +143,18 @@ The test matrix covers:
 - server-side admin page authorization
 - sign-out-everywhere revocation
 - callback open-redirect attempts
-- hashed Redis rate-limit identifiers
+- hashed Redis rate-limit identifiers and per-scope budgets against real Redis
+- rate limits failing closed on Redis timeout and connection refusal
+- Redis session TTL, rotation, logout deletion, and rejection of pre-version sessions
+- role downgrade and sign-out-everywhere across two devices against PostgreSQL and Redis
+- a login that read the session version before a concurrent sign-out-everywhere
 - role downgrade authorization from the earlier hardening pass
 
 ## Security boundaries and limitations
 
 - Password sign-up does not yet verify ownership of the submitted email.
 - There is no password-reset flow, MFA, recovery-code flow, account deletion flow, or explicit OAuth account-linking UI.
-- Redis availability is required for sessions and authentication rate limits.
+- Redis availability is required for sessions and authentication rate limits; sign-in, sign-up, and OAuth fail closed while Redis is slow or unreachable.
 - Rate limiting is application-level defense in depth and does not replace edge abuse controls.
 - Security headers are configured, but a nonce-based Content Security Policy is not yet included.
 - Provider tokens are used only for the callback exchange and are not persisted.
