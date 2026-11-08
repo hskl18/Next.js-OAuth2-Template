@@ -21,6 +21,6 @@ Please allow reasonable time for triage before publishing details.
 
 ## Scope
 
-Useful reports include authentication bypass, account-linking confusion, session fixation, callback replay, CSRF, open redirects, credential exposure, injection, and authorization failures.
+Useful reports include authentication bypass, account-linking confusion, password setup link misuse, session fixation or revocation gaps, callback replay, CSRF, open redirects, rate-limit bypass, credential exposure, injection, and authorization failures.
 
 The repository is a reference implementation and has no supported public production service.
