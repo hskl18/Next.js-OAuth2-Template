@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm"
 import {
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -23,6 +24,8 @@ export const UserTable = pgTable(
     password: text(),
     salt: text(),
     role: userRoleEnum().notNull().default("user"),
+    // Incrementing this revokes every session issued with an older value.
+    sessionVersion: integer().notNull().default(0),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true })
       .notNull()

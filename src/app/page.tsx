@@ -1,3 +1,4 @@
+import { logOutEverywhere } from "@/auth/nextjs/actions"
 import { LogOutButton } from "@/auth/nextjs/components/LogOutButton"
 import { getCurrentUser } from "@/auth/nextjs/currentUser"
 import { Button } from "@/components/ui/button"
@@ -11,7 +12,7 @@ import {
 import Link from "next/link"
 
 export default async function HomePage() {
-  const fullUser = await getCurrentUser({ withFullUser: true })
+  const fullUser = await getCurrentUser()
 
   return (
     <div className="container mx-auto p-4">
@@ -40,6 +41,11 @@ export default async function HomePage() {
               </Button>
             )}
             <LogOutButton />
+            <form action={logOutEverywhere}>
+              <Button type="submit" variant="outline">
+                Log Out Everywhere
+              </Button>
+            </form>
           </CardFooter>
         </Card>
       )}

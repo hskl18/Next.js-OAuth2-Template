@@ -1,20 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
-  cookies: vi.fn(),
   getCurrentUser: vi.fn(),
   revalidatePath: vi.fn(),
-  updateUserSessionData: vi.fn(),
   update: vi.fn(),
 }))
 
-vi.mock("next/headers", () => ({ cookies: mocks.cookies }))
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }))
 vi.mock("@/auth/nextjs/currentUser", () => ({
   getCurrentUser: mocks.getCurrentUser,
-}))
-vi.mock("@/auth/core/session", () => ({
-  updateUserSessionData: mocks.updateUserSessionData,
 }))
 vi.mock("@/drizzle/db", () => ({ db: { update: mocks.update } }))
 vi.mock("@/drizzle/schema", () => ({
@@ -35,7 +29,6 @@ describe("dropAdminRole authorization", () => {
     await expect(dropAdminRole()).rejects.toThrow("NEXT_REDIRECT")
 
     expect(mocks.update).not.toHaveBeenCalled()
-    expect(mocks.updateUserSessionData).not.toHaveBeenCalled()
     expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
 
@@ -43,7 +36,6 @@ describe("dropAdminRole authorization", () => {
     await expect(dropAdminRole()).rejects.toThrow("Forbidden")
 
     expect(mocks.update).not.toHaveBeenCalled()
-    expect(mocks.updateUserSessionData).not.toHaveBeenCalled()
     expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
 
@@ -58,27 +50,20 @@ describe("dropAdminRole authorization", () => {
       "Failed to drop admin access: user was not updated"
     )
 
-    expect(mocks.updateUserSessionData).not.toHaveBeenCalled()
     expect(mocks.revalidatePath).not.toHaveBeenCalled()
   })
 
   it("allows an admin to drop their access to the user role", async () => {
-    const cookieStore = { get: vi.fn(), set: vi.fn() }
-    const updatedUser = { id: "admin-1", role: "user" }
+    const updatedUser = { id: "admin-1" }
     const returning = vi.fn().mockResolvedValue([updatedUser])
     const where = vi.fn().mockReturnValue({ returning })
     const set = vi.fn().mockReturnValue({ where })
     mocks.getCurrentUser.mockResolvedValue({ id: "admin-1", role: "admin" })
-    mocks.cookies.mockResolvedValue(cookieStore)
     mocks.update.mockReturnValue({ set })
 
     await expect(dropAdminRole()).resolves.toBeUndefined()
 
     expect(set).toHaveBeenCalledWith({ role: "user" })
-    expect(mocks.updateUserSessionData).toHaveBeenCalledWith(
-      updatedUser,
-      cookieStore
-    )
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/private")
   })
 })

@@ -16,6 +16,7 @@ import { createUserSession, removeUserFromSession } from "../core/session"
 import { getOAuthClient } from "../core/oauth/base"
 import { enforceAuthRateLimit } from "../core/rateLimit"
 import { getClientAddress } from "./requestIdentity"
+import { getCurrentUser } from "./currentUser"
 
 export async function signIn(unsafeData: z.infer<typeof signInSchema>) {
   const { success, data } = signInSchema.safeParse(unsafeData)
@@ -32,7 +33,7 @@ export async function signIn(unsafeData: z.infer<typeof signInSchema>) {
   }
 
   const user = await db.query.UserTable.findFirst({
-    columns: { password: true, salt: true, id: true, email: true, role: true },
+    columns: { password: true, salt: true, id: true, sessionVersion: true },
     where: eq(sql`lower(${UserTable.email})`, data.email),
   })
 
@@ -85,7 +86,7 @@ export async function signUp(unsafeData: z.infer<typeof signUpSchema>) {
         password: hashedPassword,
         salt,
       })
-      .returning({ id: UserTable.id, role: UserTable.role })
+      .returning({ id: UserTable.id, sessionVersion: UserTable.sessionVersion })
 
     if (user == null) return "Unable to create account"
     await createUserSession(user, await cookies())
@@ -97,6 +98,16 @@ export async function signUp(unsafeData: z.infer<typeof signUpSchema>) {
 }
 
 export async function logOut() {
+  await removeUserFromSession(await cookies())
+  redirect("/")
+}
+
+export async function logOutEverywhere() {
+  const user = await getCurrentUser({ redirectIfNotFound: true })
+  await db
+    .update(UserTable)
+    .set({ sessionVersion: sql`${UserTable.sessionVersion} + 1` })
+    .where(eq(UserTable.id, user.id))
   await removeUserFromSession(await cookies())
   redirect("/")
 }
