@@ -19,23 +19,25 @@ import Link from "next/link"
 
 export function SignUpForm() {
   const [error, setError] = useState<string>()
+  const [notice, setNotice] = useState<string>()
   const form = useForm<z.infer<typeof signUpSchema>>({
     defaultValues: {
       name: "",
       email: "",
-      password: "",
     },
   })
 
   async function onSubmit(data: z.infer<typeof signUpSchema>) {
-    const error = await signUp(data)
-    setError(error)
+    const result = await signUp(data)
+    setError(result.ok ? undefined : result.message)
+    setNotice(result.ok ? result.message : undefined)
   }
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
         {error && <p className="text-destructive">{error}</p>}
+        {notice && <p role="status">{notice}</p>}
         <div className="flex gap-4">
           <Button
             type="button"
@@ -71,19 +73,6 @@ export function SignUpForm() {
               <FormLabel>Email</FormLabel>
               <FormControl>
                 <Input type="email" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Password</FormLabel>
-              <FormControl>
-                <Input type="password" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
