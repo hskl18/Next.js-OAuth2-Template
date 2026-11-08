@@ -12,6 +12,8 @@ The useful artifact is the account-ownership policy, its database constraints, a
 - An OAuth email matching an existing local account does not authenticate or silently link that account.
 - State and PKCE verifier cookies are one-time values and are cleared after success, denial, malformed callbacks, rate limits, and validation failures.
 - A successful password or OAuth login revokes the previous session before issuing a new opaque session identifier with an absolute seven-day lifetime.
+- Sessions name a user and a session version only; role and revocation state are read from PostgreSQL on every authorized request, so a role change or sign-out-everywhere applies to every device on its next request.
+- Protected pages and actions check authorization themselves; there is no request proxy to bypass or to rewrite sessions concurrently.
 - PostgreSQL uniqueness constraints make provider ownership and one-account-per-provider rules enforceable under concurrent callbacks.
 - Redis-backed limits cover password sign-in, sign-up, OAuth start, and OAuth callback attempts.
 
@@ -86,7 +88,8 @@ sequenceDiagram
 | Email-based account takeover | Provider identity first and no email auto-link | Core ownership tests and PostgreSQL integration test |
 | Unverified provider email | GitHub verified primary selection and Discord `verified: true` | Provider-specific tests |
 | Concurrent callback ownership ambiguity | Transactional inserts and unique provider constraints | Concurrent PostgreSQL integration test |
-| Session fixation or unbounded extension | Existing Redis session is revoked before login rotation, and the request proxy preserves the absolute expiration | Session rotation and expiration tests |
+| Session fixation or unbounded extension | Existing Redis session is revoked before login rotation, and sessions are never rewritten after login | Session rotation and expiration tests |
+| Stale privileges or lost revocation across devices | Role and session version come from PostgreSQL per request; sign-out-everywhere increments the version | Current-user, admin page, and sign-out-everywhere tests |
 | Provider failure or malicious payload | Five-second timeout, no redirects, status checks, JSON and Zod validation | Provider response tests |
 | Brute force and callback abuse | Redis sliding-window limits with hashed identifiers | Rate-limit behavior test |
 | Open redirect through callback parameters | Fixed same-origin destinations only | Callback redirect regression test |
@@ -123,7 +126,10 @@ The test matrix covers:
 - provider account already linked to another local user
 - existing local user with a matching email
 - concurrent provider callbacks
-- session rotation
+- session rotation and absolute expiration
+- database role and session version override stale sessions
+- server-side admin page authorization
+- sign-out-everywhere revocation
 - callback open-redirect attempts
 - hashed Redis rate-limit identifiers
 - role downgrade authorization from the earlier hardening pass
@@ -154,6 +160,7 @@ The test matrix covers:
 | `src/auth/core/oauth/account.ts` | Provider-first account ownership policy |
 | `src/auth/core/oauth/postgresAccountStore.ts` | Transactional PostgreSQL adapter |
 | `src/auth/core/session.ts` | Opaque Redis sessions and login rotation |
+| `src/auth/nextjs/currentUser.ts` | Per-request authorization from the database row |
 | `src/auth/core/rateLimit.ts` | Hashed Redis rate-limit keys and policy |
 | `src/app/api/oauth/[provider]/route.ts` | OAuth callback boundary |
 | `src/drizzle/schema.ts` | User and provider-account constraints |

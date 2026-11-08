@@ -1,4 +1,3 @@
-import { userRoles } from "@/drizzle/schema"
 import { z } from "zod"
 import crypto from "crypto"
 import { redisClient } from "@/redis/redis"
@@ -9,12 +8,12 @@ const COOKIE_SESSION_KEY = "session-id"
 
 const sessionSchema = z.object({
   id: z.string(),
-  role: z.enum(userRoles),
+  sessionVersion: z.number().int().nonnegative(),
   expiresAt: z.number().int().positive(),
 })
 
 type StoredSession = z.infer<typeof sessionSchema>
-type UserSession = Pick<StoredSession, "id" | "role">
+type UserSession = Pick<StoredSession, "id" | "sessionVersion">
 export type Cookies = {
   set: (
     key: string,
@@ -38,24 +37,6 @@ export function getUserFromSession(cookies: Pick<Cookies, "get">) {
   return getUserSessionById(sessionId)
 }
 
-export async function updateUserSessionData(
-  user: UserSession,
-  cookies: Pick<Cookies, "get">
-) {
-  const sessionId = cookies.get(COOKIE_SESSION_KEY)?.value
-  if (sessionId == null) return null
-  const existingSession = await getUserSessionById(sessionId)
-  if (existingSession == null) return null
-
-  const updatedSession = sessionSchema.parse({
-    ...user,
-    expiresAt: existingSession.expiresAt,
-  })
-  await redisClient.set(`session:${sessionId}`, updatedSession, {
-    ex: remainingSeconds(updatedSession.expiresAt),
-  })
-}
-
 export async function createUserSession(
   user: UserSession,
   cookies: Pick<Cookies, "get" | "set">
@@ -73,21 +54,6 @@ export async function createUserSession(
   })
 
   setCookie(sessionId, expiresAt, cookies)
-}
-
-export async function updateUserSessionExpiration(
-  cookies: Pick<Cookies, "get" | "set">
-) {
-  const sessionId = cookies.get(COOKIE_SESSION_KEY)?.value
-  if (sessionId == null) return null
-
-  const user = await getUserSessionById(sessionId)
-  if (user == null) return
-
-  await redisClient.set(`session:${sessionId}`, user, {
-    ex: remainingSeconds(user.expiresAt),
-  })
-  setCookie(sessionId, user.expiresAt, cookies)
 }
 
 export async function removeUserFromSession(
@@ -125,8 +91,4 @@ async function getUserSessionById(sessionId: string) {
     return null
   }
   return user
-}
-
-function remainingSeconds(expiresAt: number) {
-  return Math.max(1, Math.ceil((expiresAt - Date.now()) / 1000))
 }
