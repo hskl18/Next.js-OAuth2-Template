@@ -26,6 +26,7 @@ export const UserTable = pgTable(
     role: userRoleEnum().notNull().default("user"),
     // Incrementing this revokes every session issued with an older value.
     sessionVersion: integer().notNull().default(0),
+    emailVerifiedAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true })
       .notNull()
@@ -75,3 +76,13 @@ export const userOauthAccountRelationships = relations(
     }),
   })
 )
+
+export const PasswordSetupTokenTable = pgTable("password_setup_tokens", {
+  // One outstanding link per user; issuing a new one replaces the old one.
+  userId: uuid()
+    .primaryKey()
+    .references(() => UserTable.id, { onDelete: "cascade" }),
+  tokenHash: text().notNull().unique(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+})

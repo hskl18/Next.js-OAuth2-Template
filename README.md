@@ -1,6 +1,6 @@
 # Next.js OAuth 2.0 Security Reference
 
-This repository demonstrates password and OAuth sign-in without treating a matching provider email as proof that two accounts have the same owner.
+This repository demonstrates password and OAuth sign-in without treating a matching provider email as proof that two accounts have the same owner, and without letting anyone but the mailbox holder choose an account's password.
 
 It is a security-focused reference implementation, not a drop-in production identity provider.
 The useful artifact is the account-ownership policy, its database constraints, and the regression tests around failure and concurrency.
@@ -15,7 +15,9 @@ The useful artifact is the account-ownership policy, its database constraints, a
 - Sessions name a user and a session version only; role and revocation state are read from PostgreSQL on every authorized request, so a role change or sign-out-everywhere applies to every device on its next request.
 - Protected pages and actions check authorization themselves; there is no request proxy to bypass or to rewrite sessions concurrently.
 - PostgreSQL uniqueness constraints make provider ownership and one-account-per-provider rules enforceable under concurrent callbacks.
-- Redis-backed limits cover password sign-in, sign-up, OAuth start, and OAuth callback attempts.
+- Redis-backed limits cover password sign-in, sign-up, password setup emails, OAuth start, and OAuth callback attempts.
+- Sign-up asks only for a name and email; the password is set through a one-hour emailed link, so a pre-registered email cannot carry an attacker's password. Password reset is the same flow.
+- Setup links are single-use under concurrency, only their SHA-256 is stored, each user has at most one live link, and using one confirms the email and signs out every device.
 
 ## 60-second local path
 
@@ -54,6 +56,10 @@ The callback always resolves `(provider, providerAccountId)` first.
 2. If the provider account is new and its verified email is unused, the callback creates one user and one provider link in a transaction.
 3. If the verified email already belongs to a local user, the callback fails with a generic public error.
 4. A concurrent insert conflict is re-read from PostgreSQL, and only the database owner of the provider identity is returned.
+
+Password setup links go only to accounts that already use a password or have no credential yet; OAuth-only accounts never gain mailbox-based password access.
+If someone pre-registers another person's email, the owner can claim it with Sign Up or Forgot password: only the mailbox receives the link, and using it replaces the password and revokes every session.
+Until that happens, the unclaimed email still blocks OAuth sign-in for the same address (rule 3).
 
 Explicit account linking is intentionally not implemented yet.
 A future linking flow must start from an authenticated local session, require fresh provider authorization, and show a confirmation before committing the link.
@@ -94,6 +100,9 @@ sequenceDiagram
 | Provider failure or malicious payload | Five-second timeout, no redirects, status checks, JSON and Zod validation | Provider response tests |
 | Brute force and callback abuse | Redis sliding-window limits with hashed identifiers that fail closed when Redis times out or is unreachable | Rate-limit unit tests and Redis integration tests |
 | Open redirect through callback parameters | Fixed same-origin destinations only | Callback redirect regression test |
+| Pre-registration of someone else's email (pre-account hijacking) | Passwords are set only through a link sent to the mailbox; password sign-in requires a confirmed email; the migration revokes sessions of password accounts created before confirmation existed | Sign-up flow, sign-in, and token integration tests |
+| Setup link theft, reuse, or guessing | 256-bit tokens stored as SHA-256, one-hour expiry, atomic single-use delete, one live link per user, `no-referrer` on the link page, form POST instead of GET | Token lifecycle PostgreSQL tests |
+| Account enumeration through sign-up or reset | Identical responses whether the email exists, is limited, or fails delivery | Reset response test |
 
 This model assumes PostgreSQL and Redis are trusted application dependencies and that TLS is terminated by the deployment platform.
 The implementation trusts Vercel's forwarded client address only when `VERCEL=1`.
@@ -147,13 +156,19 @@ The test matrix covers:
 - rate limits failing closed on Redis timeout and connection refusal
 - Redis session TTL, rotation, logout deletion, and rejection of pre-version sessions
 - role downgrade and sign-out-everywhere across two devices against PostgreSQL and Redis
+- concurrent use of one setup link, concurrent issuance, expiry, replacement, and cascade deletion
+- OAuth-only accounts receiving no setup link
+- password reset signing out every device
+- sign-up through the emailed link followed by password sign-in
 - a login that read the session version before a concurrent sign-out-everywhere
 - role downgrade authorization from the earlier hardening pass
 
 ## Security boundaries and limitations
 
-- Password sign-up does not yet verify ownership of the submitted email.
-- There is no password-reset flow, MFA, recovery-code flow, account deletion flow, or explicit OAuth account-linking UI.
+- Email delivery has only a development console transport. In production builds sign-up and reset are disabled with a visible message until a provider is wired into `src/auth/core/email.ts`.
+- Delivery runs before the response, so its latency can hint that an account exists once a real provider is used.
+- Password accounts created before email confirmation existed must use Forgot password before they can sign in again.
+- There is no MFA, recovery-code flow, account deletion flow, or explicit OAuth account-linking UI.
 - Redis availability is required for sessions and authentication rate limits; sign-in, sign-up, and OAuth fail closed while Redis is slow or unreachable.
 - Rate limiting is application-level defense in depth and does not replace edge abuse controls.
 - Security headers are configured, but a nonce-based Content Security Policy is not yet included.
@@ -178,6 +193,7 @@ The test matrix covers:
 | `src/auth/core/session.ts` | Opaque Redis sessions and login rotation |
 | `src/auth/nextjs/currentUser.ts` | Per-request authorization from the database row |
 | `src/auth/core/rateLimit.ts` | Hashed Redis rate-limit keys and policy |
+| `src/auth/core/passwordSetup.ts` | Emailed password setup links for sign-up and reset |
 | `src/app/api/oauth/[provider]/route.ts` | OAuth callback boundary |
 | `src/drizzle/schema.ts` | User and provider-account constraints |
 
