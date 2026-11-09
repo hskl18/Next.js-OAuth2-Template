@@ -43,6 +43,12 @@ http://localhost:3000/api/oauth/github
 http://localhost:3000/api/oauth/discord
 ```
 
+![Sign-in page after a password was set through a password setup link, with GitHub and Discord sign-in above the password form](docs/media/sign-in.png)
+
+![A signed-in session showing the user's role and a Log Out Everywhere button](docs/media/signed-in.png)
+
+*A local production build of `main` on 2026-11-08, with PostgreSQL and Redis from Docker Compose; the account was created through the development email-link flow.*
+
 To run the full suite, including the integration tests, against a separate database (they delete every user):
 
 ```bash
