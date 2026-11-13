@@ -35,7 +35,7 @@ CI runs 77 tests in 22 files on every push and pull request.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
-  <img alt="Sequence of an OAuth sign-in: the browser starts OAuth; the Next.js auth boundary enforces a hashed rate limit in Redis and sets HttpOnly state and PKCE cookies; the browser sends the authorization request to GitHub or Discord; the provider returns a code, state, or denial; Next.js consumes the one-time state and verifier, makes bounded token and identity requests, resolves the provider identity in Postgres first, rotates the session in Redis, and sets an HttpOnly SameSite session cookie." src="docs/architecture-light.svg">
+  <img alt="Sequence of an OAuth sign-in: the browser starts OAuth; the Next.js auth boundary enforces a hashed rate limit in Redis and sets HttpOnly state and PKCE cookies; the browser sends the authorization request to GitHub or Discord; the provider returns a code and state, or a denial; Next.js consumes the one-time state and verifier, makes bounded token and identity requests, resolves the provider identity in Postgres first, rotates the session in Redis, and sets an HttpOnly SameSite session cookie." src="docs/architecture-light.svg">
 </picture>
 
 ## What this implements
@@ -77,11 +77,8 @@ The [development guide](docs/development.md) shows how to run the integration te
 
 ## Limits
 
-- There is no production deployment, monitoring, audit log, or formal security assessment.
-- Email delivery has only a development console transport, so production builds disable sign-up and reset until a provider is wired into `src/auth/core/email.ts`.
-- Sessions and rate limits need Redis; sign-in, sign-up, and OAuth fail closed while Redis is slow or unreachable.
-
-The [threat model](docs/threat-model.md) maps each threat to its control and tests and lists every known limit.
+Sessions and rate limits need Redis, so sign-in, sign-up, and OAuth fail closed while Redis is slow or unreachable.
+The [threat model](docs/threat-model.md) maps each threat to its control and tests and lists the known limits.
 
 ## Reporting a vulnerability
 

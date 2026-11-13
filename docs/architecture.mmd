@@ -9,10 +9,11 @@ sequenceDiagram
     Next->>Redis: Enforce hashed client rate limit
     Next-->>Browser: HttpOnly state and PKCE cookies
     Browser->>Provider: Authorization request with PKCE challenge
-    Provider-->>Next: Code, state, or provider denial
+    Provider-->>Next: Code and state, or a denial
     Next->>Next: Consume one-time state and verifier
     Next->>Provider: Bounded token and identity requests
     Next->>Postgres: Resolve provider identity first
     Postgres-->>Next: Existing owner, new owner, or conflict
     Next->>Redis: Revoke old session and store new session
     Next-->>Browser: HttpOnly SameSite session cookie
+%% Edit this file, then render architecture-light.svg and architecture-dark.svg from it again.
