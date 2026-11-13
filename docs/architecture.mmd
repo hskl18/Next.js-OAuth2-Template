@@ -1,0 +1,19 @@
+sequenceDiagram
+    participant Browser
+    participant Next as Next.js auth boundary
+    participant Provider as GitHub or Discord
+    participant Postgres
+    participant Redis
+
+    Browser->>Next: Start OAuth
+    Next->>Redis: Enforce hashed client rate limit
+    Next-->>Browser: HttpOnly state and PKCE cookies
+    Browser->>Provider: Authorization request with PKCE challenge
+    Provider-->>Next: Code and state, or a denial
+    Next->>Next: Consume one-time state and verifier
+    Next->>Provider: Bounded token and identity requests
+    Next->>Postgres: Resolve provider identity first
+    Postgres-->>Next: Existing owner, new owner, or conflict
+    Next->>Redis: Revoke old session and store new session
+    Next-->>Browser: HttpOnly SameSite session cookie
+%% Edit this file; the owner renders architecture-light.svg and architecture-dark.svg from it with a shared theme.
