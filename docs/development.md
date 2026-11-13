@@ -1,9 +1,10 @@
 # Development and verification
 
-How to run the full test suite, the checks CI runs, why some dependencies are pinned, and where the code lives.
+How to run the full test suite, the checks to run before a pull request, why some dependencies are pinned, and where the code lives.
 
 ## Integration tests
 
+Start from the local setup in the README's [Run it](../README.md#run-it) section, so `.env.local`, the dependencies, and the Compose services are in place.
 To run the full suite, including the integration tests, against a separate database (they delete every user):
 
 ```bash
@@ -31,6 +32,8 @@ npm run typecheck
 npm test
 npm run build
 ```
+
+CI runs all of these except `npm audit`, which is a local check.
 
 `RUN_DB_INTEGRATION=1` enables the PostgreSQL tests, and `RUN_REDIS_INTEGRATION=1` enables the Redis tests; the session-revocation tests need both.
 GitHub Actions starts PostgreSQL 17, Redis 7, and serverless-redis-http, applies the generated migrations, sets both flags, and runs the whole suite.

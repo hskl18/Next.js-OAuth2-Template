@@ -66,7 +66,7 @@ http://localhost:3000/api/oauth/github
 http://localhost:3000/api/oauth/discord
 ```
 
-The [development guide](docs/development.md) shows how to run the integration tests against a separate database, the checks CI runs, and where each part of the code lives.
+The [development guide](docs/development.md) shows how to run the integration tests against a separate database, the checks to run before a pull request, and where each part of the code lives.
 
 ## Non-goals
 
