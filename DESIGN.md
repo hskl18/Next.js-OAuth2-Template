@@ -1,7 +1,7 @@
 # Design and decisions
 
 This document explains the parts of the sign-in flow that are easy to get wrong, the decision taken for each, and the failures that were found and fixed along the way.
-The README covers the threat model, how to run the code, and its limitations.
+The README covers how to run the code and its main limits, and [docs/threat-model.md](docs/threat-model.md) maps each threat to its control and lists every known limit.
 
 ## Account ownership
 
